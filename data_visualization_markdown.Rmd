@@ -2,7 +2,7 @@
 title: "Data_Visualization"
 author: "William Anderson"
 date: "2022-09-29"
-output: html_document
+output: github_document
 ---
 
 ```{r, echo = FALSE, message = FALSE}
@@ -14,7 +14,7 @@ library(ggridges)
 We’ll be working with NOAA weather data, which is downloaded using rnoaa::meteo_pull_monitors function in the code chunk below; similar code underlies the weather dataset used elsewhere in the course. Because this process can take some time, I’ll cache the code chunk.
 
 
-```{r, echo = FALSE}
+```{r, echo = FALSE, message = FALSE}
 
 weather_df = 
   rnoaa::meteo_pull_monitors(
