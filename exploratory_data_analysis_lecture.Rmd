@@ -1,0 +1,234 @@
+---
+title: "exploratory_data_analysis_lecture"
+author: "William Anderson"
+date: "2022-10-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+library(tidyverse)
+library(ggridges)
+``````
+
+
+```{r}
+weather_df =  
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728", "USC00519397", "USS0023B17S"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(
+      id, 
+      USW00094728 = "CentralPark_NY", 
+      USC00519397 = "Waikiki_HA",
+      USS0023B17S = "Waterhole_WA"),
+    tmin = tmin / 10,
+    tmax = tmax / 10,
+    month = lubridate::floor_date(date, unit = "month")) %>%
+  select(name, id, everything())
+```
+
+## group_by
+Datasets are often comprised of groups defined by one or more (categorical) variable; group_by() makes these groupings explicit so that they can be included in subsequent operations. For example, we might group weather_df by name and month:
+
+```{r}
+weather_df %>%
+  group_by(name, month)
+```
+
+Several important functions respect grouping structures. You will frequently use summarize to create one-number summaries within each group, or use mutate to define variables within groups. The rest of this example shows these functions in action.
+
+Because these (and other) functions will use grouping information if it exists, it is sometimes necessary to remove groups using ungroup()
+
+## Counting things
+As an into to (summarize), let's count the number of observations in each month in the complete weather_df data set. 
+
+```{r}
+weather_df %>%
+  group_by(month) %>%
+  summarize(n_obs = n())
+```
+Now we have the total number of observations for each month entry
+
+We can group by more than one variable
+
+```{r}
+weather_df %>%
+  group_by(name, month) %>%
+  summarize(n_obs = n())
+```
+Now we have the total number of observations for each month and each name
+
+To count things, you could use count() in place of group_by() and summarize() if you remember that this function exists. I’ll also make use of the name argument in count, which defaults to "n".
+
+```{r}
+weather_df %>%
+  count(month, name = "n_obs")
+```
+
+You can use summarize() to compute multiple summaries within each group. As an example, we count the number of observations in each month and the number of distinct values of date in each month
+
+```{r}
+weather_df %>%
+  group_by(month) %>%
+  summarize(
+    n_obs = n(),
+    n_days = n_distinct(date))
+  
+```
+
+let’s say you want to look at the number of cold and not-cold days in Central Park and Waterhole. We can do this with some extra data manipulation steps and group_by + summarize:
+
+```{r}
+weather_df %>%
+  mutate(
+    cold = case_when(
+      tmax < 5 ~ "cold",
+      tmax >= 5 ~ "not_cold",
+      TRUE    ~ ""
+    )) %>%
+  
+  filter(name != "Waikiki_HA") %>%
+  group_by(name, cold) %>%
+  summarize(count = n())
+  
+```
+
+This is a “tidy” table, and it’s also a data frame. You could re-organize into a more standard (non-tidy) 2x2 table using pivot_wider, or you could use janitor::tabyl
+
+```{r}
+weather_df %>%
+  mutate(cold = case_when(
+    tmax < 5 ~ "cold",
+    tmax >= 5 ~ "not_cold",
+    TRUE      ~ ""
+  )) %>%
+  filter(name != "Waikiki_HA") %>%
+  janitor::tabyl(name,cold)
+```
+
+## General summaries
+Standard statistical summaries are regularly computed in summarize() using functions like mean(), median(), var(), sd(), mad(), IQR(), min(), and max(). To use these, you indicate the variable to which they apply and include any additional arguments as necessary.
+
+```{r}
+weather_df %>%
+  group_by(month) %>%
+  summarize(
+    mean_tmax = mean(tmax),
+    mean_prec = mean(prcp, na.rm = TRUE),
+    median_tmax = median(tmax),
+    sd_tmax = sd(tmax))
+```
+
+You can group more than one variable
+
+```{r}
+weather_df %>%
+  group_by(name, month) %>%
+  summarize(
+    mean_tmax = mean(tmax),
+    median_tmax = median(tmax))
+```
+
+This computes the mean and median of tmax for observations on a certain date in a certain place aka Central Park
+
+If you want to summarize multiple columns using the same summary, the across function is helpful.
+
+```{r}
+weather_df %>%
+  group_by(name, month) %>%
+  summarize(across(tmin:prcp, mean))
+```
+
+The fact that summarize() produces a dataframe is important (and consistent with other functions in the tidyverse). You can incorporate grouping and summarizing within broader analysis pipelines. For example, we can take create a plot based on the monthly summary:
+
+```{r}
+weather_df %>%
+  group_by(name, month) %>%
+  summarize(mean_tmax = mean(tmax)) %>%
+  ggplot(aes(x = month, y = mean_tmax, color = name)) + 
+  geom_point() + geom_line() + 
+  theme(legend.position = "bottom")
+```
+
+The results of group_by() and summarize() are generally tidy, but presenting reader-friendly results for this kind of exploratory analysis often benefits from some un-tidying. For example, the table below shows month-by-month average max temperatures in a more human-readable format.
+
+```{r}
+weather_df %>%
+  group_by(name, month) %>%
+  summarize(mean_tmax = mean(tmax)) %>%
+  pivot_wider(
+    names_from = name,
+    values_from = mean_tmax) %>%
+  knitr::kable(digits = 1)
+
+```
+
+## Grouped mutate
+Summarizing collapses groups into single data points. In contrast, using mutate() in conjuntion with group_by() will retain all original data points and add new variables computed within groups.
+
+Suppose you want to compare the daily max temperature to the annual average max temperature for each station separately, and to plot the result. You could do so using:
+
+```{r}
+weather_df %>%
+  group_by(name) %>%
+  mutate(
+    mean_tmax = mean(tmax, na.rm = TRUE),
+    centered_tmax = tmax - mean_tmax) %>%
+  ggplot(aes(x = date, y = centered_tmax, color = name)) + geom_point()
+
+```
+
+The previous example used mean() to compute the mean within each group, which was then subtracted from the observed max tempurature. mean() takes n inputs and produces a single output.
+
+Window functions, in contrast, take n inputs and return n outputs, and the outputs depend on all the inputs. There are several categories of window functions; you’re most likely to need ranking functions and offsets, which we illustrate below.
+
+First, we can find the max temperature ranking within month. The reason it's called min_rank is because if there are equal values it takes the minimum
+
+```{r}
+weather_df %>%
+  group_by(name, month) %>%
+  mutate(temp_ranking = min_rank(tmax)) %>%
+  arrange(name, month, temp_ranking)
+```
+
+This sort of ranking is useful when filtering data based on rank. We could, for example, keep only the day with the lowest max temperature within each month:
+
+```{r}
+weather_df %>%
+  group_by(name, month) %>%
+  filter(min_rank(tmax) < 2)
+```
+
+We could also keep the three days with the highest max temperature:
+
+```{r}
+weather_df %>%
+  group_by(name, month) %>%
+  filter(min_rank(desc(tmax)) < 4)
+```
+
+Offsets, especially lags, are used to compare an observation to it’s previous value. This is useful, for example, to find the day-by-day change in max temperature within each station over the year:
+
+```{r}
+weather_df %>%
+  group_by(name) %>%
+  mutate(temp_change = tmax - lag(tmax)) %>%
+
+view()
+```
+
+This kind of variable might be used to quantify the day-by-day variability in max temperature, or to identify the largest one-day increase:
+
+```{r}
+weather_df %>%
+  group_by(name) %>%
+  mutate(temp_change = tmax - lag(tmax)) %>%
+  summarize(
+    temp_change_sd = sd(temp_change, na.rm = TRUE),
+    temp_change_max = max(temp_change, na.rm = TRUE))
+```
+
